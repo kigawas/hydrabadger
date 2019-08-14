@@ -5,7 +5,7 @@ use super::{Error, Handler, StateDsct, StateMachine};
 use crate::peer::{PeerHandler, Peers};
 use crate::{
     key_gen, BatchRx, Change, Contribution, EpochRx, EpochTx, InAddr, InternalMessage, InternalTx,
-    NodeId, OutAddr, WireMessage, WireMessageKind, WireMessages,
+    NodeId, OutAddr, WireMessage, WireMessageStream,
 };
 use futures::{
     future::{self, Either},
@@ -310,8 +310,8 @@ impl<C: Contribution, N: NodeId + DeserializeOwned + 'static> Hydrabadger<C, N> 
     /// Returns a future that handles incoming connections on `socket`.
     fn handle_incoming(self, socket: TcpStream) -> impl Future<Item = (), Error = ()> {
         info!("Incoming connection from '{}'", socket.peer_addr().unwrap());
-        let wire_msgs: WireMessages<C, N> =
-            WireMessages::new(socket, self.inner.secret_key.clone());
+        let wire_msgs: WireMessageStream<C, N> =
+            WireMessageStream::new(socket, self.inner.secret_key.clone());
 
         wire_msgs
             .into_future()
@@ -320,9 +320,9 @@ impl<C: Contribution, N: NodeId + DeserializeOwned + 'static> Hydrabadger<C, N> 
                 // let _hdb = self.clone();
 
                 match msg_opt {
-                    Some(msg) => match msg.into_kind() {
+                    Some(msg) => match msg {
                         // The only correct entry point:
-                        WireMessageKind::HelloRequestChangeAdd(peer_nid, peer_in_addr, peer_pk) => {
+                        WireMessage::HelloRequestChangeAdd(peer_nid, peer_in_addr, peer_pk) => {
                             // Also adds a `Peer` to `self.peers`.
                             let peer_h = PeerHandler::new(
                                 Some((peer_nid.clone(), peer_in_addr, peer_pk)),
@@ -379,7 +379,7 @@ impl<C: Contribution, N: NodeId + DeserializeOwned + 'static> Hydrabadger<C, N> 
             .and_then(move |socket| {
                 let local_pk = local_sk.public_key();
                 // Wrap the socket with the frame delimiter and codec:
-                let mut wire_msgs = WireMessages::new(socket, local_sk);
+                let mut wire_msgs = WireMessageStream::new(socket, local_sk);
                 let wire_hello_result = wire_msgs.send_msg(WireMessage::hello_request_change_add(
                     nid, in_addr, local_pk,
                 ));

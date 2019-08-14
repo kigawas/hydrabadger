@@ -194,7 +194,7 @@ pub enum NetworkState<N: Ord> {
 /// [`Message`](enum.WireMessageKind.html#variant.Message) variants are among
 /// those verified.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum WireMessageKind<C, N: Ord> {
+pub enum WireMessage<C, N: Ord> {
     HelloFromValidator(N, InAddr, PublicKey, NetworkState<N>),
     HelloRequestChangeAdd(N, InAddr, PublicKey),
     WelcomeReceivedChangeAdd(N, PublicKey, NetworkState<N>),
@@ -216,29 +216,19 @@ pub enum WireMessageKind<C, N: Ord> {
     JoinPlan(JoinPlan<N>),
 }
 
-/// Messages sent over the network between nodes.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WireMessage<C, N: Ord> {
-    kind: WireMessageKind<C, N>,
-}
-
 impl<C: Contribution, N: NodeId> WireMessage<C, N> {
     pub fn hello_from_validator(
         src_uid: N,
         in_addr: InAddr,
         pk: PublicKey,
         net_state: NetworkState<N>,
-    ) -> WireMessage<C, N> {
-        WireMessageKind::HelloFromValidator(src_uid, in_addr, pk, net_state).into()
+    ) -> Self {
+        Self::HelloFromValidator(src_uid, in_addr, pk, net_state).into()
     }
 
     /// Returns a `HelloRequestChangeAdd` variant.
-    pub fn hello_request_change_add(
-        src_uid: N,
-        in_addr: InAddr,
-        pk: PublicKey,
-    ) -> WireMessage<C, N> {
-        WireMessageKind::HelloRequestChangeAdd(src_uid, in_addr, pk).into()
+    pub fn hello_request_change_add(src_uid: N, in_addr: InAddr, pk: PublicKey) -> Self {
+        Self::HelloRequestChangeAdd(src_uid, in_addr, pk).into()
     }
 
     /// Returns a `WelcomeReceivedChangeAdd` variant.
@@ -247,49 +237,33 @@ impl<C: Contribution, N: NodeId> WireMessage<C, N> {
         pk: PublicKey,
         net_state: NetworkState<N>,
     ) -> WireMessage<C, N> {
-        WireMessageKind::WelcomeReceivedChangeAdd(src_uid, pk, net_state).into()
+        Self::WelcomeReceivedChangeAdd(src_uid, pk, net_state).into()
     }
 
     /// Returns an `Input` variant.
-    pub fn transaction(src_uid: N, txn: C) -> WireMessage<C, N> {
-        WireMessageKind::Transaction(src_uid, txn).into()
+    pub fn transaction(src_uid: N, txn: C) -> Self {
+        Self::Transaction(src_uid, txn).into()
     }
 
     /// Returns a `Message` variant.
-    pub fn message(src_uid: N, msg: Message<N>) -> WireMessage<C, N> {
-        WireMessageKind::Message(src_uid, msg).into()
+    pub fn message(src_uid: N, msg: Message<N>) -> Self {
+        Self::Message(src_uid, msg).into()
     }
 
-    pub fn key_gen(instance_id: InstanceId, msg: KeyGenMessage) -> WireMessage<C, N> {
-        WireMessageKind::KeyGen(instance_id, msg).into()
+    pub fn key_gen(instance_id: InstanceId, msg: KeyGenMessage) -> Self {
+        Self::KeyGen(instance_id, msg).into()
     }
 
-    pub fn key_gen_part(instance_id: InstanceId, part: Part) -> WireMessage<C, N> {
-        WireMessage::key_gen(instance_id, KeyGenMessage::part(part))
+    pub fn key_gen_part(instance_id: InstanceId, part: Part) -> Self {
+        Self::key_gen(instance_id, KeyGenMessage::part(part))
     }
 
-    pub fn key_gen_ack(instance_id: InstanceId, ack: Ack) -> WireMessage<C, N> {
-        WireMessage::key_gen(instance_id, KeyGenMessage::ack(ack))
+    pub fn key_gen_ack(instance_id: InstanceId, ack: Ack) -> Self {
+        Self::key_gen(instance_id, KeyGenMessage::ack(ack))
     }
 
-    pub fn join_plan(jp: JoinPlan<N>) -> WireMessage<C, N> {
-        WireMessageKind::JoinPlan(jp).into()
-    }
-
-    /// Returns the wire message kind.
-    pub fn kind(&self) -> &WireMessageKind<C, N> {
-        &self.kind
-    }
-
-    /// Consumes this `WireMessage` into its kind.
-    pub fn into_kind(self) -> WireMessageKind<C, N> {
-        self.kind
-    }
-}
-
-impl<C: Contribution, N: NodeId> From<WireMessageKind<C, N>> for WireMessage<C, N> {
-    fn from(kind: WireMessageKind<C, N>) -> WireMessage<C, N> {
-        WireMessage { kind }
+    pub fn join_plan(jp: JoinPlan<N>) -> Self {
+        Self::JoinPlan(jp)
     }
 }
 
@@ -301,7 +275,7 @@ pub struct SignedWireMessage {
 }
 
 /// A stream/sink of `WireMessage`s connected to a socket.
-pub struct WireMessages<C: Contribution, N: NodeId> {
+pub struct WireMessageStream<C: Contribution, N: NodeId> {
     framed: Framed<TcpStream, LengthDelimitedCodec>,
     local_sk: SecretKey,
     peer_pk: Option<PublicKey>,
@@ -309,9 +283,9 @@ pub struct WireMessages<C: Contribution, N: NodeId> {
     _n: PhantomData<N>,
 }
 
-impl<C: Contribution, N: NodeId + DeserializeOwned> WireMessages<C, N> {
-    pub fn new(socket: TcpStream, local_sk: SecretKey) -> WireMessages<C, N> {
-        WireMessages {
+impl<C: Contribution, N: NodeId + DeserializeOwned> WireMessageStream<C, N> {
+    pub fn new(socket: TcpStream, local_sk: SecretKey) -> WireMessageStream<C, N> {
+        WireMessageStream {
             framed: Framed::new(socket, LengthDelimitedCodec::new()),
             local_sk,
             peer_pk: None,
@@ -336,7 +310,7 @@ impl<C: Contribution, N: NodeId + DeserializeOwned> WireMessages<C, N> {
     }
 }
 
-impl<C: Contribution, N: NodeId + DeserializeOwned> Stream for WireMessages<C, N> {
+impl<C: Contribution, N: NodeId + DeserializeOwned> Stream for WireMessageStream<C, N> {
     type Item = WireMessage<C, N>;
     type Error = Error;
 
@@ -349,8 +323,8 @@ impl<C: Contribution, N: NodeId + DeserializeOwned> Stream for WireMessages<C, N
                     bincode::deserialize(&s_msg.message).map_err(Error::Serde)?;
 
                 // Verify signature for certain variants.
-                match msg.kind {
-                    WireMessageKind::Message(..) | WireMessageKind::KeyGen(..) => {
+                match msg {
+                    WireMessage::Message(..) | WireMessage::KeyGen(..) => {
                         let peer_pk = self
                             .peer_pk
                             .ok_or(Error::VerificationMessageReceivedUnknownPeer)?;
@@ -368,7 +342,7 @@ impl<C: Contribution, N: NodeId + DeserializeOwned> Stream for WireMessages<C, N
     }
 }
 
-impl<C: Contribution, N: NodeId + Serialize> Sink for WireMessages<C, N> {
+impl<C: Contribution, N: NodeId + Serialize> Sink for WireMessageStream<C, N> {
     type SinkItem = WireMessage<C, N>;
     type SinkError = Error;
 

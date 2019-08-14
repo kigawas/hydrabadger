@@ -10,7 +10,7 @@ use crate::peer::Peers;
 use crate::{
     key_gen::{InstanceId, KeyGenMessage, Machine},
     BatchTx, Contribution, InAddr, InternalMessage, InternalMessageKind, InternalRx, NetworkState,
-    NodeId, OutAddr, Step, Uid, WireMessage, WireMessageKind,
+    NodeId, OutAddr, Step, Uid, WireMessage,
 };
 use crossbeam::queue::SegQueue;
 use hbbft::{
@@ -528,32 +528,28 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
                 self.key_gens.borrow_mut().insert(new_id, key_gen);
             }
 
-            InternalMessageKind::Wire(w_msg) => match w_msg.into_kind() {
+            InternalMessageKind::Wire(w_msg) => match w_msg {
                 // This is sent on the wire to ensure that we have all of the
                 // relevant details for a peer (generally preceeding other
                 // messages which may arrive before `Welcome...`.
-                WireMessageKind::HelloFromValidator(
-                    src_nid_new,
-                    src_in_addr,
-                    src_pk,
-                    net_state,
-                ) => {
-                    debug_assert!(src_nid.is_none());
-                    debug_assert!(src_nid_new == src_nid.unwrap());
-
+                WireMessage::HelloFromValidator(src_nid_new, src_in_addr, src_pk, net_state) => {
                     debug!("Received hello from {:?}", src_nid_new);
                     let mut peers = self.hdb.peers_mut();
-                    peers.establish_validator(
+                    if peers.establish_validator(
                         src_out_addr,
                         (src_nid_new.clone(), src_in_addr, src_pk),
-                    );
+                    ) {
+                        debug_assert!(src_nid_new == src_nid.unwrap());
+                    } else {
+                        debug_assert!(src_nid.is_none());
+                    }
 
                     // Modify state accordingly:
                     self.handle_net_state(net_state, state, &peers)?;
                 }
 
                 // New outgoing connection response:
-                WireMessageKind::WelcomeReceivedChangeAdd(src_nid_new, src_pk, net_state) => {
+                WireMessage::WelcomeReceivedChangeAdd(src_nid_new, src_pk, net_state) => {
                     debug!("Received NetworkState: \n{:?}", net_state);
                     assert!(src_nid_new == src_nid.unwrap());
                     let mut peers = self.hdb.peers_mut();
@@ -578,7 +574,7 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
                     )?;
                 }
 
-                WireMessageKind::KeyGen(instance_id, msg) => {
+                WireMessage::KeyGen(instance_id, msg) => {
                     self.handle_key_gen_message(
                         instance_id,
                         msg,
@@ -590,7 +586,7 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
 
                 // Output by validators when a batch with a `ChangeState`
                 // other than `None` is output. Idempotent.
-                WireMessageKind::JoinPlan(jp) => {
+                WireMessage::JoinPlan(jp) => {
                     let peers = self.hdb.peers();
                     self.handle_join_plan(jp, state, &peers)?;
                 }

@@ -4,8 +4,8 @@
 
 use crate::hydrabadger::{Error, Hydrabadger};
 use crate::{
-    Contribution, InAddr, InternalMessage, NodeId, OutAddr, Uid, WireMessage, WireMessageKind,
-    WireMessages, WireRx, WireTx,
+    Contribution, InAddr, InternalMessage, NodeId, OutAddr, Uid, WireMessage, WireMessageStream,
+    WireRx, WireTx,
 };
 use futures::sync::mpsc;
 use hbbft::{crypto::PublicKey, dynamic_honey_badger::Input as HbInput};
@@ -26,7 +26,7 @@ pub struct PeerHandler<C: Contribution, N: NodeId> {
     nid: Option<N>,
 
     // The incoming stream of messages:
-    wire_msgs: WireMessages<C, N>,
+    wire_msgs: WireMessageStream<C, N>,
 
     /// Handle to the shared message state.
     hdb: Hydrabadger<C, N>,
@@ -45,7 +45,7 @@ impl<C: Contribution, N: NodeId> PeerHandler<C, N> {
     pub fn new(
         pub_info: Option<(N, InAddr, PublicKey)>,
         hdb: Hydrabadger<C, N>,
-        mut wire_msgs: WireMessages<C, N>,
+        mut wire_msgs: WireMessageStream<C, N>,
     ) -> PeerHandler<C, N> {
         // Get the client socket address
         let out_addr = OutAddr(wire_msgs.socket().peer_addr().unwrap());
@@ -119,15 +119,15 @@ impl<C: Contribution, N: NodeId> Future for PeerHandler<C, N> {
             trace!("Received message: {:?}", message);
 
             if let Some(msg) = message {
-                match msg.into_kind() {
-                    WireMessageKind::HelloRequestChangeAdd(src_nid, _in_addr, _pub_key) => {
+                match msg {
+                    WireMessage::HelloRequestChangeAdd(src_nid, _in_addr, _pub_key) => {
                         error!(
                             "Duplicate `WireMessage::HelloRequestChangeAdd` \
                              received from '{:?}'",
                             src_nid
                         );
                     }
-                    WireMessageKind::WelcomeReceivedChangeAdd(src_nid, pk, net_state) => {
+                    WireMessage::WelcomeReceivedChangeAdd(src_nid, pk, net_state) => {
                         self.nid = Some(src_nid.clone());
                         self.wire_msgs.set_peer_public_key(pk);
                         self.hdb.send_internal(InternalMessage::wire(
@@ -140,7 +140,7 @@ impl<C: Contribution, N: NodeId> Future for PeerHandler<C, N> {
                             ),
                         ));
                     }
-                    WireMessageKind::HelloFromValidator(src_nid, in_addr, pk, net_state) => {
+                    WireMessage::HelloFromValidator(src_nid, in_addr, pk, net_state) => {
                         self.nid = Some(src_nid.clone());
                         self.wire_msgs.set_peer_public_key(pk);
                         self.hdb.send_internal(InternalMessage::wire(
@@ -154,7 +154,7 @@ impl<C: Contribution, N: NodeId> Future for PeerHandler<C, N> {
                             ),
                         ));
                     }
-                    WireMessageKind::Message(src_nid, msg) => {
+                    WireMessage::Message(src_nid, msg) => {
                         if let Some(peer_nid) = self.nid.as_ref() {
                             debug_assert_eq!(src_nid, *peer_nid);
                         }
@@ -165,7 +165,7 @@ impl<C: Contribution, N: NodeId> Future for PeerHandler<C, N> {
                             msg,
                         ))
                     }
-                    WireMessageKind::Transaction(src_nid, txn) => {
+                    WireMessage::Transaction(src_nid, txn) => {
                         if let Some(peer_nid) = self.nid.as_ref() {
                             debug_assert_eq!(src_nid, *peer_nid);
                         }
