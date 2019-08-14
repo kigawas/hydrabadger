@@ -12,6 +12,7 @@ use futures::{
     sync::mpsc,
 };
 use hbbft::crypto::{PublicKey, SecretKey};
+use log::{error, info, trace, warn};
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::de::DeserializeOwned;
 use std::{
@@ -296,7 +297,7 @@ impl<C: Contribution, N: NodeId + DeserializeOwned + 'static> Hydrabadger<C, N> 
 
     /// Begins a synchronous distributed key generation instance and returns a
     /// stream which may be polled for events and messages.
-    pub fn new_key_gen_instance(&self) -> mpsc::UnboundedReceiver<key_gen::Message> {
+    pub fn new_key_gen_instance(&self) -> mpsc::UnboundedReceiver<key_gen::KeyGenMessage> {
         let (tx, rx) = mpsc::unbounded();
         self.send_internal(InternalMessage::new_key_gen_instance(
             self.inner.nid.clone(),
@@ -473,7 +474,7 @@ impl<C: Contribution, N: NodeId + DeserializeOwned + 'static> Hydrabadger<C, N> 
                 .map(|p| {
                     p.in_addr()
                         .map(|ia| ia.0.to_string())
-                        .unwrap_or(format!("No in address"))
+                        .unwrap_or_else(|| panic!("No in address"))
                 })
                 .collect::<Vec<_>>();
             info!("    Peers: {:?}", peer_list);
@@ -513,6 +514,8 @@ impl<C: Contribution, N: NodeId + DeserializeOwned + 'static> Hydrabadger<C, N> 
 
         let hdb = self.clone();
         let local_sk = hdb.inner.secret_key.clone();
+        println!("local sk {:?}", local_sk);
+
         let connect = future::lazy(move || {
             for &remote_addr in remotes.iter().filter(|&&ra| ra != hdb.inner.addr.0) {
                 tokio::spawn(hdb.clone().connect_outgoing(

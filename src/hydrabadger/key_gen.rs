@@ -1,7 +1,7 @@
 //! Synchronous distributed key generation.
 
 use super::Error;
-use crate::hydrabadger::hydrabadger::Hydrabadger;
+use crate::hydrabadger::badger::Hydrabadger;
 use crate::peer::Peers;
 use crate::{Contribution, NetworkState, NodeId, Uid, WireMessage};
 use crossbeam::queue::SegQueue;
@@ -10,7 +10,9 @@ use hbbft::{
     crypto::{PublicKey, SecretKey},
     sync_key_gen::{Ack, AckOutcome, Part, PartOutcome, SyncKeyGen},
 };
+use log::{debug, error, info, trace, warn};
 use rand::{self, FromEntropy};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -19,41 +21,22 @@ pub enum InstanceId {
     User(Uid),
 }
 
-/// Messages used during synchronous key generation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum MessageKind {
+pub enum KeyGenMessage {
     Part(Part),
     Ack(Ack),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Message {
-    kind: MessageKind,
-}
-
-impl Message {
-    pub fn part(part: Part) -> Message {
-        Message {
-            kind: MessageKind::Part(part),
-        }
+impl KeyGenMessage {
+    pub fn part(part: Part) -> Self {
+        Self::Part(part)
     }
 
-    pub fn ack(ack: Ack) -> Message {
-        Message {
-            kind: MessageKind::Ack(ack),
-        }
-    }
-
-    pub fn kind(&self) -> &MessageKind {
-        &self.kind
-    }
-
-    pub fn into_kind(self) -> MessageKind {
-        self.kind
+    pub fn ack(ack: Ack) -> Self {
+        Self::Ack(ack)
     }
 }
 
-/// Key generation state.
 #[derive(Debug)]
 pub(super) enum State<N> {
     AwaitingPeers {
@@ -117,7 +100,7 @@ fn handle_queued_acks<C: Contribution, N: NodeId>(
 pub struct Machine<N> {
     state: State<N>,
     ack_queue: SegQueue<(N, Ack)>,
-    event_tx: Option<mpsc::UnboundedSender<Message>>,
+    event_tx: Option<mpsc::UnboundedSender<KeyGenMessage>>,
     instance_id: InstanceId,
 }
 
@@ -126,7 +109,7 @@ impl<N: NodeId> Machine<N> {
     /// state.
     pub fn awaiting_peers(
         ack_queue: SegQueue<(N, Ack)>,
-        event_tx: Option<mpsc::UnboundedSender<Message>>,
+        event_tx: Option<mpsc::UnboundedSender<KeyGenMessage>>,
         instance_id: InstanceId,
     ) -> Machine<N> {
         Machine {
@@ -146,7 +129,7 @@ impl<N: NodeId> Machine<N> {
         local_nid: &N,
         local_sk: SecretKey,
         peers: &Peers<C, N>,
-        event_tx: mpsc::UnboundedSender<Message>,
+        event_tx: mpsc::UnboundedSender<KeyGenMessage>,
         instance_id: InstanceId,
     ) -> Result<Machine<N>, Error> {
         let mut m = Machine {
@@ -425,7 +408,7 @@ impl<N: NodeId> Machine<N> {
         }
     }
 
-    pub(super) fn event_tx(&self) -> Option<&mpsc::UnboundedSender<Message>> {
+    pub(super) fn event_tx(&self) -> Option<&mpsc::UnboundedSender<KeyGenMessage>> {
         self.event_tx.as_ref()
     }
 }

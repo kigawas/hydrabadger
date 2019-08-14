@@ -1,5 +1,5 @@
+mod badger;
 mod handler;
-mod hydrabadger;
 pub mod key_gen;
 mod state;
 
@@ -10,7 +10,7 @@ use bincode;
 use hbbft::{dynamic_honey_badger::Error as DhbError, sync_key_gen::Error as SyncKeyGenError};
 use std;
 
-pub use self::hydrabadger::{Config, Hydrabadger, HydrabadgerWeak};
+pub use self::badger::{Config, Hydrabadger, HydrabadgerWeak};
 pub use self::state::StateDsct;
 
 // Number of times to attempt wire message re-send.

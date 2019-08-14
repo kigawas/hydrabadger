@@ -1,60 +1,9 @@
-#![cfg_attr(feature = "nightly", feature(alloc_system))]
-#![cfg_attr(feature = "nightly", feature(proc_macro))]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(
-        large_enum_variant,
-        new_without_default_derive,
-        expect_fun_call,
-        or_fun_call,
-        useless_format,
-        cyclomatic_complexity,
-        needless_pass_by_value,
-        module_inception,
-        match_bool
-    )
-)]
-
-#[cfg(feature = "nightly")]
-extern crate alloc_system;
-extern crate clap;
-extern crate env_logger;
-#[macro_use]
-extern crate log;
 #[macro_use]
 extern crate failure;
-extern crate chrono;
-extern crate crossbeam;
-extern crate crypto;
-extern crate num_bigint;
-extern crate num_traits;
+
 #[macro_use]
 extern crate futures;
-extern crate byteorder;
-extern crate bytes;
-extern crate rand;
-extern crate tokio;
-extern crate tokio_codec;
-extern crate tokio_io;
-extern crate uuid;
-#[macro_use]
-extern crate serde_derive;
-extern crate bincode;
-extern crate clear_on_drop;
-pub extern crate hbbft;
-extern crate parking_lot;
-extern crate serde;
-extern crate serde_bytes;
-extern crate tokio_serde_bincode;
 
-#[cfg(feature = "nightly")]
-use alloc_system::System;
-
-#[cfg(feature = "nightly")]
-#[global_allocator]
-static A: System = System;
-
-// pub mod network;
 pub mod blockchain;
 pub mod hydrabadger;
 pub mod peer;
@@ -73,7 +22,7 @@ use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fmt::{self, Debug},
@@ -92,7 +41,7 @@ use uuid::Uuid;
 pub use crate::blockchain::{Blockchain, MiningError};
 pub use crate::hydrabadger::{Config, Hydrabadger, HydrabadgerWeak};
 // TODO: Create a separate, library-wide error type.
-pub use crate::hydrabadger::key_gen;
+pub use crate::hydrabadger::key_gen::{self, InstanceId, KeyGenMessage};
 pub use crate::hydrabadger::Error;
 pub use crate::hydrabadger::StateDsct;
 pub use hbbft::dynamic_honey_badger::Batch;
@@ -263,7 +212,7 @@ pub enum WireMessageKind<C, N: Ord> {
     // TODO(c0gent): Remove.
     Transaction(N, C),
     /// Messages used during synchronous key generation.
-    KeyGen(key_gen::InstanceId, key_gen::Message),
+    KeyGen(InstanceId, KeyGenMessage),
     JoinPlan(JoinPlan<N>),
 }
 
@@ -311,16 +260,16 @@ impl<C: Contribution, N: NodeId> WireMessage<C, N> {
         WireMessageKind::Message(src_uid, msg).into()
     }
 
-    pub fn key_gen(instance_id: key_gen::InstanceId, msg: key_gen::Message) -> WireMessage<C, N> {
+    pub fn key_gen(instance_id: InstanceId, msg: KeyGenMessage) -> WireMessage<C, N> {
         WireMessageKind::KeyGen(instance_id, msg).into()
     }
 
-    pub fn key_gen_part(instance_id: key_gen::InstanceId, part: Part) -> WireMessage<C, N> {
-        WireMessage::key_gen(instance_id, key_gen::Message::part(part))
+    pub fn key_gen_part(instance_id: InstanceId, part: Part) -> WireMessage<C, N> {
+        WireMessage::key_gen(instance_id, KeyGenMessage::part(part))
     }
 
-    pub fn key_gen_ack(instance_id: key_gen::InstanceId, ack: Ack) -> WireMessage<C, N> {
-        WireMessage::key_gen(instance_id, key_gen::Message::ack(ack))
+    pub fn key_gen_ack(instance_id: InstanceId, ack: Ack) -> WireMessage<C, N> {
+        WireMessage::key_gen(instance_id, KeyGenMessage::ack(ack))
     }
 
     pub fn join_plan(jp: JoinPlan<N>) -> WireMessage<C, N> {
@@ -462,7 +411,7 @@ pub enum InternalMessageKind<C: Contribution, N: NodeId> {
     PeerDisconnect,
     NewIncomingConnection(InAddr, PublicKey, bool),
     NewOutgoingConnection,
-    NewKeyGenInstance(mpsc::UnboundedSender<key_gen::Message>),
+    NewKeyGenInstance(mpsc::UnboundedSender<KeyGenMessage>),
 }
 
 /// A message between internal threads/tasks.
@@ -543,7 +492,7 @@ impl<C: Contribution, N: NodeId> InternalMessage<C, N> {
     pub fn new_key_gen_instance(
         src_uid: N,
         src_addr: OutAddr,
-        tx: mpsc::UnboundedSender<key_gen::Message>,
+        tx: mpsc::UnboundedSender<KeyGenMessage>,
     ) -> InternalMessage<C, N> {
         InternalMessage::new(
             Some(src_uid),

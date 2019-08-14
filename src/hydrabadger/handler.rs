@@ -8,8 +8,9 @@ use super::WIRE_MESSAGE_RETRY_MAX;
 use super::{Error, Hydrabadger, InputOrMessage, State, StateDsct, StateMachine};
 use crate::peer::Peers;
 use crate::{
-    key_gen, BatchTx, Contribution, InAddr, InternalMessage, InternalMessageKind, InternalRx,
-    NetworkState, NodeId, OutAddr, Step, Uid, WireMessage, WireMessageKind,
+    key_gen::{InstanceId, KeyGenMessage, Machine},
+    BatchTx, Contribution, InAddr, InternalMessage, InternalMessageKind, InternalRx, NetworkState,
+    NodeId, OutAddr, Step, Uid, WireMessage, WireMessageKind,
 };
 use crossbeam::queue::SegQueue;
 use hbbft::{
@@ -18,6 +19,7 @@ use hbbft::{
     sync_key_gen::{Ack, Part},
     Target,
 };
+use log::{debug, error, info, trace, warn};
 use std::{cell::RefCell, collections::HashMap};
 use tokio::{self, prelude::*};
 
@@ -35,7 +37,7 @@ pub struct Handler<C: Contribution, N: NodeId> {
     /// Distributed synchronous key generation instances.
     //
     // TODO: Move these to separate threads/tasks.
-    key_gens: RefCell<HashMap<Uid, key_gen::Machine<N>>>,
+    key_gens: RefCell<HashMap<Uid, Machine<N>>>,
 }
 
 impl<C: Contribution, N: NodeId> Handler<C, N> {
@@ -118,12 +120,7 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
             } => {
                 key_gen.handle_key_gen_part(src_nid, part, peers);
             }
-            State::DeterminingNetworkState {
-                ref network_state, ..
-            } => match network_state.is_some() {
-                true => unimplemented!(),
-                false => unimplemented!(),
-            },
+            State::DeterminingNetworkState { .. } => unimplemented!(),
             ref s => panic!(
                 "::handle_key_gen_part: State must be `GeneratingKeys`. \
                  State: \n{:?} \n\n[FIXME: Enqueue these parts!]\n\n",
@@ -167,14 +164,12 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
 
     fn handle_key_gen_message(
         &self,
-        instance_id: key_gen::InstanceId,
-        msg: key_gen::Message,
+        instance_id: InstanceId,
+        msg: KeyGenMessage,
         src_nid: &N,
         state: &mut StateMachine<C, N>,
         peers: &Peers<C, N>,
     ) -> Result<(), Error> {
-        use crate::key_gen::{InstanceId, MessageKind};
-
         match instance_id {
             InstanceId::User(id) => {
                 let mut key_gens = self.key_gens.borrow_mut();
@@ -182,11 +177,11 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
                     Some(ref mut kg) => {
                         kg.event_tx().unwrap().unbounded_send(msg.clone()).unwrap();
 
-                        match msg.into_kind() {
-                            MessageKind::Part(part) => {
+                        match msg {
+                            KeyGenMessage::Part(part) => {
                                 kg.handle_key_gen_part(src_nid, part, peers);
                             }
-                            MessageKind::Ack(ack) => {
+                            KeyGenMessage::Ack(ack) => {
                                 kg.handle_key_gen_ack(src_nid, ack, peers)?;
                             }
                         }
@@ -194,11 +189,11 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
                     None => error!("KeyGen message received with invalid instance"),
                 }
             }
-            InstanceId::BuiltIn => match msg.into_kind() {
-                MessageKind::Part(part) => {
+            InstanceId::BuiltIn => match msg {
+                KeyGenMessage::Part(part) => {
                     self.handle_key_gen_part(src_nid, part, state, peers)?;
                 }
-                MessageKind::Ack(ack) => {
+                KeyGenMessage::Ack(ack) => {
                     self.handle_key_gen_ack(src_nid, ack, state, peers)?;
                 }
             },
@@ -522,8 +517,8 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
                 let peers = self.hdb.peers();
                 let new_id = Uid::new();
                 // tx.unbounded_send(key_gen::Message::instance_id().unwrap();
-                let instance_id = key_gen::InstanceId::User(new_id);
-                let key_gen = key_gen::Machine::generate(
+                let instance_id = InstanceId::User(new_id);
+                let key_gen = Machine::generate(
                     self.hdb.node_id(),
                     self.hdb.secret_key().clone(),
                     &peers,
@@ -543,15 +538,15 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
                     src_pk,
                     net_state,
                 ) => {
+                    debug_assert!(src_nid.is_none());
+                    debug_assert!(src_nid_new == src_nid.unwrap());
+
                     debug!("Received hello from {:?}", src_nid_new);
                     let mut peers = self.hdb.peers_mut();
-                    match peers.establish_validator(
+                    peers.establish_validator(
                         src_out_addr,
                         (src_nid_new.clone(), src_in_addr, src_pk),
-                    ) {
-                        true => debug_assert!(src_nid_new == src_nid.unwrap()),
-                        false => debug_assert!(src_nid.is_none()),
-                    }
+                    );
 
                     // Modify state accordingly:
                     self.handle_net_state(net_state, state, &peers)?;

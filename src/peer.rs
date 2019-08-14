@@ -9,6 +9,7 @@ use crate::{
 };
 use futures::sync::mpsc;
 use hbbft::{crypto::PublicKey, dynamic_honey_badger::Input as HbInput};
+use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
@@ -458,64 +459,6 @@ impl<C: Contribution, N: NodeId> Peers<C, N> {
         self.peers.insert(peer.out_addr, peer);
     }
 
-    /// Attempts to set peer as pending-join-info, storing `pub_info`.
-    ///
-    /// Returns `true` if the peer was already pending.
-    ///
-    /// ### Panics
-    ///
-    /// Peer state must be `Handshaking`.
-    ///
-    /// TODO: Error handling...
-    pub(crate) fn set_pending<O: Borrow<OutAddr>>(
-        &mut self,
-        out_addr: O,
-        pub_info: (N, InAddr, PublicKey),
-    ) -> bool {
-        let peer = self.peers.get_mut(out_addr.borrow()).expect(&format!(
-            "Peers::set_pending: \
-             No peer found with outgoing address: {}",
-            out_addr.borrow()
-        ));
-        match self
-            .out_addrs
-            .insert(pub_info.0.clone(), *out_addr.borrow())
-        {
-            Some(_out_addr_pub) => {
-                let pi_pub = peer
-                    .pub_info()
-                    .expect("Peers::set_pending: internal consistency error");
-                assert!(
-                    pub_info.0 == *pi_pub.0 && pub_info.1 == *pi_pub.1 && pub_info.2 == *pi_pub.2
-                );
-                assert!(peer.is_validator());
-                return true;
-            }
-            None => peer.set_pending(pub_info),
-        }
-
-        // false
-        panic!("Peer::set_pending: Do not use yet.");
-    }
-
-    /// Attempts to establish a peer as an observer.
-    ///
-    /// ### Panics
-    ///
-    /// Peer state must be `Handshaking`.
-    ///
-    /// TODO: Error handling...
-    pub(crate) fn establish_observer<O: Borrow<OutAddr>>(&mut self, out_addr: O) {
-        let peer = self.peers.get_mut(out_addr.borrow()).expect(&format!(
-            "Peers::establish_observer: \
-             No peer found with outgoing address: {}",
-            out_addr.borrow()
-        ));
-
-        // peer.establish_observer()
-        panic!("Peer::set_pending: Do not use yet.");
-    }
-
     /// Attempts to establish a peer as a validator, storing `pub_info`.
     ///
     /// Returns `true` if the peer was already an established validator.
@@ -530,11 +473,13 @@ impl<C: Contribution, N: NodeId> Peers<C, N> {
         out_addr: O,
         pub_info: (N, InAddr, PublicKey),
     ) -> bool {
-        let peer = self.peers.get_mut(out_addr.borrow()).expect(&format!(
-            "Peers::establish_validator: \
-             No peer found with outgoing address: {}",
-            out_addr.borrow()
-        ));
+        let peer = self.peers.get_mut(out_addr.borrow()).unwrap_or_else(|| {
+            panic!(
+                "Peers::establish_validator: \
+                 No peer found with outgoing address: {}",
+                out_addr.borrow()
+            )
+        });
         match self
             .out_addrs
             .insert(pub_info.0.clone(), *out_addr.borrow())

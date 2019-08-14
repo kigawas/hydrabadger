@@ -15,6 +15,7 @@ use hbbft::{
     sync_key_gen::Ack,
     NetworkInfo,
 };
+use log::{debug, error, info, trace};
 use rand::{rngs::StdRng, FromEntropy};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
