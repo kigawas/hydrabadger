@@ -178,7 +178,7 @@ impl<C: Contribution, N: NodeId> StateMachine<C, N> {
             State::KeyGen {
                 ref mut iom_queue, ..
             } => {
-                info!("Setting state: `DeterminingNetworkState`.");
+                info!("Setting state: `DeterminingNetworkState`: Active");
                 State::DeterminingNetworkState {
                     ack_queue: Some(SegQueue::new()),
                     iom_queue: iom_queue.take(),
@@ -344,7 +344,7 @@ impl<C: Contribution, N: NodeId> StateMachine<C, N> {
     pub(super) fn update_peer_connection_added(&mut self, _peers: &Peers<C, N>) {
         self.state = match self.state {
             State::Disconnected {} => {
-                info!("Setting state: `DeterminingNetworkState`.");
+                info!("Setting state: `DeterminingNetworkState`: None");
                 State::DeterminingNetworkState {
                     ack_queue: Some(SegQueue::new()),
                     iom_queue: Some(SegQueue::new()),
@@ -410,7 +410,7 @@ impl<C: Contribution, N: NodeId> StateMachine<C, N> {
             .collect::<Vec<_>>();
         match self.state {
             State::KeyGen { ref key_gen, .. } => match key_gen.state() {
-                KeyGenState::AwaitingPeers { .. } => {
+                KeyGenState::AwaitingPeers => {
                     NetworkState::AwaitingMorePeersForKeyGeneration(peer_infos)
                 }
                 KeyGenState::Generating {

@@ -154,7 +154,7 @@ impl<C: Contribution, N: NodeId> Future for PeerHandler<C, N> {
                             ),
                         ));
                     }
-                    WireMessage::Message(src_nid, msg) => {
+                    WireMessage::BadgerMessage(src_nid, msg) => {
                         if let Some(peer_nid) = self.nid.as_ref() {
                             debug_assert_eq!(src_nid, *peer_nid);
                         }

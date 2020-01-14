@@ -514,7 +514,6 @@ impl<C: Contribution, N: NodeId + DeserializeOwned + 'static> Hydrabadger<C, N> 
 
         let hdb = self.clone();
         let local_sk = hdb.inner.secret_key.clone();
-        println!("local sk {:?}", local_sk);
 
         let connect = future::lazy(move || {
             for &remote_addr in remotes.iter().filter(|&&ra| ra != hdb.inner.addr.0) {

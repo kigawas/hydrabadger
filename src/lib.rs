@@ -127,7 +127,7 @@ impl fmt::Debug for Uid {
     }
 }
 
-pub type Message<N> = DhbMessage<N>;
+pub type DHBMessage<N> = DhbMessage<N>;
 pub type Step<C, N> = MessagingStep<DynamicHoneyBadger<C, N>>;
 pub type Change<N> = DhbChange<N>;
 
@@ -202,15 +202,13 @@ pub enum WireMessage<C, N: Ord> {
     NetworkState(NetworkState<N>),
     Goodbye,
     #[serde(with = "serde_bytes")]
-    // TODO(c0gent): Remove.
-    Bytes(Bytes),
+    Bytes(Bytes), // TODO Remove
     /// A Honey Badger message.
     ///
     /// All received messages are verified against the senders public key
     /// using an attached signature.
-    Message(N, Message<N>),
-    // TODO(c0gent): Remove.
-    Transaction(N, C),
+    BadgerMessage(N, DHBMessage<N>),
+    Transaction(N, C), // TODO Remove
     /// Messages used during synchronous key generation.
     KeyGen(InstanceId, KeyGenMessage),
     JoinPlan(JoinPlan<N>),
@@ -246,8 +244,8 @@ impl<C: Contribution, N: NodeId> WireMessage<C, N> {
     }
 
     /// Returns a `Message` variant.
-    pub fn message(src_uid: N, msg: Message<N>) -> Self {
-        Self::Message(src_uid, msg).into()
+    pub fn message(src_uid: N, msg: DHBMessage<N>) -> Self {
+        Self::BadgerMessage(src_uid, msg).into()
     }
 
     pub fn key_gen(instance_id: InstanceId, msg: KeyGenMessage) -> Self {
@@ -324,7 +322,7 @@ impl<C: Contribution, N: NodeId + DeserializeOwned> Stream for WireMessageStream
 
                 // Verify signature for certain variants.
                 match msg {
-                    WireMessage::Message(..) | WireMessage::KeyGen(..) => {
+                    WireMessage::BadgerMessage(..) | WireMessage::KeyGen(..) => {
                         let peer_pk = self
                             .peer_pk
                             .ok_or(Error::VerificationMessageReceivedUnknownPeer)?;
@@ -379,7 +377,7 @@ impl<C: Contribution, N: NodeId + Serialize> Sink for WireMessageStream<C, N> {
 #[derive(Clone, Debug)]
 pub enum InternalMessageKind<C: Contribution, N: NodeId> {
     Wire(WireMessage<C, N>),
-    HbMessage(Message<N>),
+    HbMessage(DHBMessage<N>),
     HbContribution(C),
     HbChange(Change<N>),
     PeerDisconnect,
@@ -425,7 +423,7 @@ impl<C: Contribution, N: NodeId> InternalMessage<C, N> {
         InternalMessage::new(src_uid, src_addr, InternalMessageKind::Wire(wire_message))
     }
 
-    pub fn hb_message(src_uid: N, src_addr: OutAddr, msg: Message<N>) -> InternalMessage<C, N> {
+    pub fn hb_message(src_uid: N, src_addr: OutAddr, msg: DHBMessage<N>) -> InternalMessage<C, N> {
         InternalMessage::new(Some(src_uid), src_addr, InternalMessageKind::HbMessage(msg))
     }
 

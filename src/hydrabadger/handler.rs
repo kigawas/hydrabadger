@@ -66,6 +66,7 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
     ) -> Result<(), Error> {
         match state.discriminant() {
             StateDsct::Disconnected | StateDsct::DeterminingNetworkState => {
+                println!("1");
                 state.update_peer_connection_added(&peers);
             }
             StateDsct::KeyGen => {
@@ -317,10 +318,12 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
         state: &mut StateMachine<C, N>,
         peers: &Peers<C, N>,
     ) -> Result<(), Error> {
+        println!("netstate {:?}", net_state);
         let peer_infos;
         match net_state {
             NetworkState::Unknown(p_infos) => {
                 peer_infos = p_infos;
+                println!("2");
                 state.update_peer_connection_added(peers);
             }
             NetworkState::AwaitingMorePeersForKeyGeneration(p_infos) => {
@@ -486,6 +489,7 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
                 debug_assert!(src_nid.is_none());
 
                 let peers = self.hdb.peers();
+                println!("3");
                 state.update_peer_connection_added(&peers);
             }
 
@@ -514,18 +518,18 @@ impl<C: Contribution, N: NodeId> Handler<C, N> {
             InternalMessageKind::NewKeyGenInstance(tx) => {
                 // TODO: Spawn these instances in a separate thread/task.
 
-                let peers = self.hdb.peers();
-                let new_id = Uid::new();
-                // tx.unbounded_send(key_gen::Message::instance_id().unwrap();
-                let instance_id = InstanceId::User(new_id);
-                let key_gen = Machine::generate(
-                    self.hdb.node_id(),
-                    self.hdb.secret_key().clone(),
-                    &peers,
-                    tx,
-                    instance_id,
-                )?;
-                self.key_gens.borrow_mut().insert(new_id, key_gen);
+                // let peers = self.hdb.peers();
+                // let new_id = Uid::new();
+                // // tx.unbounded_send(key_gen::Message::instance_id().unwrap();
+                // let instance_id = InstanceId::User(new_id);
+                // let key_gen = Machine::generate(
+                //     self.hdb.node_id(),
+                //     self.hdb.secret_key().clone(),
+                //     &peers,
+                //     tx,
+                //     instance_id,
+                // )?;
+                // self.key_gens.borrow_mut().insert(new_id, key_gen);
             }
 
             InternalMessageKind::Wire(w_msg) => match w_msg {
@@ -609,7 +613,7 @@ impl<C: Contribution, N: NodeId> Future for Handler<C, N> {
     /// Polls the internal message receiver until all txs are dropped.
     fn poll(&mut self) -> Poll<(), Error> {
         // Ensure the loop can't hog the thread for too long:
-        const MESSAGES_PER_TICK: usize = 50;
+        const MESSAGES_PER_TICK: usize = 20;
 
         let mut state = self.hdb.state_mut();
 
@@ -617,6 +621,7 @@ impl<C: Contribution, N: NodeId> Future for Handler<C, N> {
         for i in 0..MESSAGES_PER_TICK {
             match self.peer_internal_rx.poll() {
                 Ok(Async::Ready(Some(i_msg))) => {
+                    println!("internal msg: {:?}", i_msg);
                     self.handle_internal_message(i_msg, &mut state)?;
 
                     // Exceeded max messages per tick, schedule notification:

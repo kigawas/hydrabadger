@@ -39,10 +39,7 @@ impl KeyGenMessage {
 
 #[derive(Debug)]
 pub(super) enum State<N> {
-    AwaitingPeers {
-        required_peers: Vec<N>,
-        available_peers: Vec<N>,
-    },
+    AwaitingPeers,
     Generating {
         sync_key_gen: Option<SyncKeyGen<N>>,
         public_key: Option<PublicKey>,
@@ -113,10 +110,7 @@ impl<N: NodeId> Machine<N> {
         instance_id: InstanceId,
     ) -> Machine<N> {
         Machine {
-            state: State::AwaitingPeers {
-                required_peers: Vec::new(),
-                available_peers: Vec::new(),
-            },
+            state: State::AwaitingPeers,
             ack_queue,
             event_tx,
             instance_id,
@@ -125,30 +119,29 @@ impl<N: NodeId> Machine<N> {
 
     /// Creates and returns a new `Machine` in the `Generating`
     /// state.
-    pub fn generate<C: Contribution>(
-        local_nid: &N,
-        local_sk: SecretKey,
-        peers: &Peers<C, N>,
-        event_tx: mpsc::UnboundedSender<KeyGenMessage>,
-        instance_id: InstanceId,
-    ) -> Result<Machine<N>, Error> {
-        let mut m = Machine {
-            state: State::AwaitingPeers {
-                required_peers: Vec::new(),
-                available_peers: Vec::new(),
-            },
-            ack_queue: SegQueue::new(),
-            event_tx: Some(event_tx),
-            instance_id: instance_id.clone(),
-        };
+    // pub fn generate<C: Contribution>(
+    //     local_nid: &N,
+    //     local_sk: SecretKey,
+    //     peers: &Peers<C, N>,
+    //     event_tx: mpsc::UnboundedSender<KeyGenMessage>,
+    //     instance_id: InstanceId,
+    // ) -> Result<Machine<N>, Error> {
+    //     panic!("generate peers: {:?}", peers);
 
-        let (part, ack) = m.set_generating_keys(local_nid, local_sk, peers)?;
+    //     let mut m = Machine {
+    //         state: State::AwaitingPeers,
+    //         ack_queue: SegQueue::new(),
+    //         event_tx: Some(event_tx),
+    //         instance_id: instance_id.clone(),
+    //     };
 
-        peers.wire_to_validators(WireMessage::key_gen_part(instance_id.clone(), part));
-        peers.wire_to_validators(WireMessage::key_gen_ack(instance_id, ack));
+    //     let (part, ack) = m.set_generating_keys(local_nid, local_sk, peers)?;
 
-        Ok(m)
-    }
+    //     peers.wire_to_validators(WireMessage::key_gen_part(instance_id.clone(), part));
+    //     peers.wire_to_validators(WireMessage::key_gen_ack(instance_id, ack));
+
+    //     Ok(m)
+    // }
 
     /// Sets the state to `AwaitingMorePeersForKeyGeneration`.
     pub(super) fn set_generating_keys<C: Contribution>(
@@ -159,9 +152,10 @@ impl<N: NodeId> Machine<N> {
     ) -> Result<(Part, Ack), Error> {
         let (part, ack);
         self.state = match self.state {
-            State::AwaitingPeers { .. } => {
+            State::AwaitingPeers => {
                 // let threshold = config.keygen_peer_count / 3;
                 let threshold = peers.count_validators() / 3;
+                println!("threshold {:?}", threshold);
 
                 let mut public_keys: BTreeMap<N, PublicKey> = peers
                     .validators()
@@ -170,6 +164,8 @@ impl<N: NodeId> Machine<N> {
 
                 let pk = local_sk.public_key();
                 public_keys.insert(local_nid.clone(), pk);
+
+                println!("pub keys: {:?}", public_keys);
 
                 let mut rng = rand::rngs::StdRng::from_entropy();
 
@@ -223,8 +219,14 @@ impl<N: NodeId> Machine<N> {
         hdb: &Hydrabadger<C, N>,
         net_state: NetworkState<N>,
     ) -> Result<(), Error> {
+        println!(
+            "validators: {:?}, peer count {:?}",
+            peers.count_validators(),
+            hdb.config().keygen_peer_count
+        );
+
         match self.state {
-            State::AwaitingPeers { .. } => {
+            State::AwaitingPeers => {
                 if peers.count_validators() >= hdb.config().keygen_peer_count {
                     info!("BEGINNING KEY GENERATION");
 
@@ -389,7 +391,7 @@ impl<N: NodeId> Machine<N> {
     /// Returns true if this key generation instance is awaiting more peers.
     pub(super) fn is_awaiting_peers(&self) -> bool {
         match self.state {
-            State::AwaitingPeers { .. } => true,
+            State::AwaitingPeers => true,
             _ => false,
         }
     }
